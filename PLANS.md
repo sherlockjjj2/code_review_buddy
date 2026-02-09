@@ -4,8 +4,8 @@ This file is the build plan and checklist for executing V1.
 
 ## Quick Start Checklist
 
-- [ ] Scaffold repo + deps + ruff + typer + pydantic
-- [ ] Implement schema contract + JSON roundtrip tests
+- [x] Scaffold repo + deps + ruff + typer + pydantic
+- [x] Implement schema contract + JSON roundtrip tests
 - [ ] Implement GitHub client (PR metadata, files, diffs, file contents) + caching
 - [ ] Build eval suite (10 cases + snapshots) + scoring engine + runner
 - [ ] Build baseline single-call reviewer + record baseline metrics
