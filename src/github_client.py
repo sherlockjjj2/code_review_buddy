@@ -10,6 +10,8 @@ import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
+from datetime import UTC
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, urlsplit
@@ -32,6 +34,7 @@ DEFAULT_IMMUTABLE_CONTENT_TTL_SECONDS = 60.0 * 60.0 * 24.0 * 30.0
 DEFAULT_GITHUB_CACHE_DB_PATH = ".cache/github_cache.sqlite"
 GITHUB_CACHE_DISABLED_ENV_VAR = "GITHUB_CACHE_DISABLED"
 GITHUB_CACHE_DB_PATH_ENV_VAR = "GITHUB_CACHE_DB_PATH"
+DOTENV_PATH_ENV_VAR = "CODE_REVIEW_AGENT_DOTENV_PATH"
 
 
 @dataclass(frozen=True, slots=True)
@@ -564,14 +567,20 @@ def _is_retryable_status(status_code: int) -> bool:
 
 
 def _parse_retry_after_seconds(response: httpx.Response) -> float | None:
-    """Parse Retry-After header as seconds if present and valid."""
+    """Parse Retry-After header as delta-seconds or HTTP-date."""
     retry_after = response.headers.get("Retry-After")
     if retry_after is None:
         return None
     try:
         parsed_value = float(retry_after)
     except ValueError:
-        return None
+        try:
+            parsed_datetime = parsedate_to_datetime(retry_after)
+        except (TypeError, ValueError):
+            return None
+        if parsed_datetime.tzinfo is None:
+            parsed_datetime = parsed_datetime.replace(tzinfo=UTC)
+        return max(0.0, parsed_datetime.timestamp() - time.time())
     if parsed_value < 0:
         return None
     return parsed_value
@@ -1234,7 +1243,7 @@ def get_github_token() -> str:
 
 def get_github_token_with_source() -> tuple[str, str]:
     """Read GitHub token and return token value with environment source key."""
-    load_dotenv(dotenv_path=Path.cwd() / ".env", override=False)
+    _load_project_dotenv()
 
     github_token = os.getenv("GITHUB_TOKEN")
     if github_token:
@@ -1246,6 +1255,34 @@ def get_github_token_with_source() -> tuple[str, str]:
 
     message = "Missing GitHub token. Set GITHUB_TOKEN (preferred) or GH_TOKEN."
     raise GitHubAuthError(message)
+
+
+def _load_project_dotenv() -> None:
+    """Load .env values from configured path, cwd, and project root if available."""
+    explicit_path = os.getenv(DOTENV_PATH_ENV_VAR)
+    if explicit_path:
+        load_dotenv(dotenv_path=Path(explicit_path).expanduser(), override=False)
+        return
+
+    loaded_paths: set[Path] = set()
+    for candidate in (Path.cwd() / ".env", _project_root_dotenv_path()):
+        if candidate is None:
+            continue
+        resolved_candidate = candidate.resolve()
+        if resolved_candidate in loaded_paths:
+            continue
+        load_dotenv(dotenv_path=resolved_candidate, override=False)
+        loaded_paths.add(resolved_candidate)
+
+
+def _project_root_dotenv_path() -> Path | None:
+    """Return repository-root .env path when pyproject.toml can be located."""
+    module_path = Path(__file__).resolve()
+    search_directory = module_path.parent
+    for directory in (search_directory, *search_directory.parents):
+        if (directory / "pyproject.toml").is_file():
+            return directory / ".env"
+    return None
 
 
 def fetch_authenticated_user_login(*, client: httpx.Client) -> str:
