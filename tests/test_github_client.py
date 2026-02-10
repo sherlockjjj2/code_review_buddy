@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Callable
+from datetime import UTC, datetime
+from email.utils import format_datetime
 from pathlib import Path
 
 import httpx
 import pytest
+import src.github_client as github_client
 from src.github_client import (
     GitHubApiError,
     GitHubAuthError,
@@ -277,6 +280,60 @@ def test_retry_honors_retry_after_header(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.unit
+def test_retry_honors_retry_after_http_date_header(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleep_durations: list[float] = []
+    monkeypatch.setattr("src.github_client._sleep_for_retry", sleep_durations.append)
+    now = 1_700_000_000.0
+    monkeypatch.setattr("src.github_client.time.time", lambda: now)
+    retry_at = format_datetime(datetime.fromtimestamp(now + 7.0, tz=UTC), usegmt=True)
+    attempts = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return httpx.Response(status_code=429, headers={"Retry-After": retry_at})
+        return httpx.Response(status_code=200, json=make_pr_payload())
+
+    with make_client(handler) as client:
+        metadata = fetch_pull_request_metadata(
+            client=client,
+            repo_full_name="acme/rocket",
+            pr_number=42,
+        )
+
+    assert metadata.number == 42
+    assert attempts["count"] == 2
+    assert sleep_durations == [7.0]
+
+
+@pytest.mark.unit
+def test_retry_honors_past_retry_after_http_date_as_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleep_durations: list[float] = []
+    monkeypatch.setattr("src.github_client._sleep_for_retry", sleep_durations.append)
+    now = 1_700_000_000.0
+    monkeypatch.setattr("src.github_client.time.time", lambda: now)
+    retry_at = format_datetime(datetime.fromtimestamp(now - 3.0, tz=UTC), usegmt=True)
+    attempts = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return httpx.Response(status_code=429, headers={"Retry-After": retry_at})
+        return httpx.Response(status_code=200, json=make_pr_payload())
+
+    with make_client(handler) as client:
+        metadata = fetch_pull_request_metadata(
+            client=client,
+            repo_full_name="acme/rocket",
+            pr_number=42,
+        )
+
+    assert metadata.number == 42
+    assert attempts["count"] == 2
+    assert sleep_durations == [0.0]
+
+
+@pytest.mark.unit
 def test_retry_uses_exponential_backoff_for_server_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -406,10 +463,36 @@ def test_get_github_token_with_source_raises_when_missing(
 ) -> None:
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setenv("CODE_REVIEW_AGENT_DOTENV_PATH", str(tmp_path / ".env"))
     monkeypatch.chdir(tmp_path)
 
     with pytest.raises(GitHubAuthError):
         get_github_token_with_source()
+
+
+@pytest.mark.unit
+def test_get_github_token_loads_repo_root_dotenv_when_cwd_differs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("CODE_REVIEW_AGENT_DOTENV_PATH", raising=False)
+
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "pyproject.toml").write_text("[project]\nname='demo'\n", encoding="utf-8")
+    (repo_root / ".env").write_text("GITHUB_TOKEN=repo-dotenv-token\n", encoding="utf-8")
+    src_dir = repo_root / "src"
+    src_dir.mkdir()
+    fake_module_path = src_dir / "github_client.py"
+    fake_module_path.write_text("# stub\n", encoding="utf-8")
+
+    external_workdir = tmp_path / "external"
+    external_workdir.mkdir()
+    monkeypatch.chdir(external_workdir)
+    monkeypatch.setattr(github_client, "__file__", str(fake_module_path))
+
+    assert get_github_token() == "repo-dotenv-token"
 
 
 @pytest.mark.unit
