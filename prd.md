@@ -29,6 +29,7 @@ The build is **eval-first** (quantitative scoring on real PRs) and uses **raw LL
 - GitHub PR via API (real-world diff + minimal surrounding context; fetch more only on-demand).
 - Auth: Personal Access Token (PAT) via env var.
   - Read `GITHUB_TOKEN` (fallback `GH_TOKEN`).
+  - Local development uses `.env` loaded via `python-dotenv` (`load_dotenv`).
   - Fail fast when token is missing.
   - Required GitHub permissions: Pull requests (read), Contents (read), Issues (write).
 
@@ -75,6 +76,14 @@ The build is **eval-first** (quantitative scoring on real PRs) and uses **raw LL
 - No duplicate bot comments; re-runs update the same comment.
 - 100% of posted issues include evidence snippets.
 - CLI provides `review` and `eval` commands working end-to-end.
+
+## Day 2 Milestone (Eval Framework + Case Curation)
+
+- Curate 10 public PR cases with ground truth annotations (`6` Python, `4` JS/TS).
+- Persist reusable PR snapshots under `eval/data/snapshots/` and map them in `eval/data/cases.json`.
+- Implement eval scoring (`recall`, `precision`, `f1`, confidence calibration) in `eval/engine.py`.
+- Implement eval orchestration in `eval/runner.py` with case filtering (`all|python|js|ts`).
+- Validate eval path with dummy-agent fixtures (expected high score vs low score).
 
 ## Evaluation Matching Rules (V1)
 
