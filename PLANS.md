@@ -6,7 +6,7 @@ This file is the build plan and checklist for executing V1.
 
 - [x] Scaffold repo + deps + ruff + typer + pydantic
 - [x] Implement schema contract + JSON roundtrip tests
-- [ ] Implement GitHub client (PR metadata, files, diffs, file contents) + caching
+- [x] Implement GitHub client (PR metadata, files, diffs, file contents) + caching
 - [ ] Build eval suite (10 cases + snapshots) + scoring engine + runner
 - [ ] Build baseline single-call reviewer + record baseline metrics
 - [ ] Implement tools + registry (read_file, search_code, run_ruff, get_function_context)
@@ -20,18 +20,29 @@ This file is the build plan and checklist for executing V1.
 
 ### Day 1 — Scaffolding + GitHub Client + Schema
 
-- T1.1 Project scaffolding
-- T1.2 Output schema
-- T1.3 GitHub API client: PR metadata + diff + pagination + parse changed line ranges
-- T1.4 GitHub API client: file contents for base/head; handle binary/new/deleted
-- T1.5 Smoke test + snapshot
+- [x] T1.1 Project scaffolding
+- [x] T1.2 Output schema
+- [x] T1.3 GitHub API client: PR metadata + diff + pagination + parse changed line ranges
+- [x] T1.4 GitHub API client: file contents for base/head; handle binary/new/deleted
+- [x] T1.4b GitHub API caching (SQLite + ETag/If-None-Match revalidation)
+- [x] T1.5 Smoke test + snapshot
 
 ### Day 2 — Eval Framework + Test Case Curation
 
-- T2.1 Curate 10 PR cases + ground truth + cache snapshots
-- T2.2 Eval scoring engine (matching logic; recall/precision/F1)
-- T2.3 Eval runner + run logs
-- T2.4 Dummy agent verification
+- [ ] T2.1 Curate 10 PR cases + ground truth + cache snapshots
+- [ ] T2.2 Eval scoring engine (matching logic; recall/precision/F1)
+- [ ] T2.3 Eval runner + run logs
+- [ ] T2.4 Dummy agent verification
+
+Day 2 completion criteria:
+
+- `eval/data/cases.json` contains 10 curated cases (6 Python, 4 JS/TS) with ground truth.
+- `eval/data/snapshots/` contains cached snapshot artifacts referenced by case IDs.
+- `eval/engine.py` computes recall/precision/f1 using matching rule: same file + category + line overlap `±3`.
+- `eval/runner.py` runs all selected cases and emits a summary artifact under `runs/`.
+- Dummy agent checks pass:
+  - perfect-match fixtures score near `1.0`
+  - mismatch fixtures score near `0.0`
 
 ### Day 3 — Baseline Review + Tool Design
 

@@ -23,6 +23,7 @@ code-review-agent/
 │ ├── context.py # smart file loading + token management
 │ ├── output.py # PR comment writer + markdown report generator
 │ ├── observability.py # run logging, cost tracking, metrics
+│ ├── snapshot_capture.py # smoke snapshot capture utility
 │ └── cli.py # Typer CLI
 ├── eval/
 │ ├── engine.py # scoring logic
@@ -140,12 +141,26 @@ Idempotency details:
 Auth contract:
 
 - Read token from `GITHUB_TOKEN` (fallback `GH_TOKEN`), fail fast if missing.
+- Local development: load `.env` via `python-dotenv` (`load_dotenv`) before token lookup.
 - Required permissions: Pull requests (read), Contents (read), Issues (write).
 
 Eval matching rule:
 
 - True-positive matching requires same `file`, same `category`, and line overlap with `±3` tolerance.
 - Severity affects scoring calibration but is not a strict match precondition.
+
+## Day 2 Execution Contract
+
+- Case curation:
+  - Curate 10 cases (`6` Python, `4` JS/TS) in `eval/data/cases.json`.
+  - Each case must reference a cached snapshot in `eval/data/snapshots/`.
+- Engine:
+  - Implement deterministic scoring for recall/precision/f1 in `eval/engine.py`.
+  - Include confidence calibration aggregation from predicted issue confidence.
+- Runner:
+  - `eval/runner.py` must support running selected subsets (`all|python|js|ts`) and emit run summary.
+- Verification:
+  - Add dummy-agent eval tests covering perfect-match and mismatch fixtures.
 
 ## Edge Cases & Failure Handling
 

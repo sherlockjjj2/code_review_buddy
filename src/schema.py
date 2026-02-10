@@ -10,8 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 DEDUPE_KEY_PATTERN = re.compile(
     r"^[^:\n]+:[1-9]\d*:(security|bug|error_handling|performance|style|logic):[a-f0-9]{8,64}$"
 )
-EVIDENCE_HEADER_PATTERN = re.compile(r"^[^:\n]+:L\d+-L\d+$")
+EVIDENCE_HEADER_PATTERN = re.compile(
+    r"^(?P<path>[^:\n]+):L(?P<line_start>[1-9]\d*)-L(?P<line_end>[1-9]\d*)$"
+)
 REVIEW_ID_PATTERN = re.compile(r"^[a-f0-9]{16}$")
+SCHEMA_VERSION_PATTERN = r"^v1(\.\d+)?$"
 
 
 class Severity(StrEnum):
@@ -87,8 +90,18 @@ class Issue(BaseModel):
             raise ValueError(
                 "evidence_snippet must include a header line and at least one body line."
             )
-        if not EVIDENCE_HEADER_PATTERN.fullmatch(header.strip()):
+        header_match = EVIDENCE_HEADER_PATTERN.fullmatch(header.strip())
+        if header_match is None:
             raise ValueError("evidence_snippet header must match path:Lx-Ly format.")
+
+        header_line_start = int(header_match.group("line_start"))
+        header_line_end = int(header_match.group("line_end"))
+        if header_line_end < header_line_start:
+            raise ValueError("evidence_snippet header range must satisfy Lx <= Ly.")
+
+        non_empty_body_lines = [line for line in body.splitlines() if line.strip()]
+        if not 1 <= len(non_empty_body_lines) <= 5:
+            raise ValueError("evidence_snippet body must include 1 to 5 non-empty lines.")
         return value
 
     @model_validator(mode="after")
@@ -116,7 +129,7 @@ class ReviewResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = Field(default="v1", pattern=r"^v\d+$")
+    schema_version: str = Field(default="v1", pattern=SCHEMA_VERSION_PATTERN)
     review_id: str = Field(min_length=16, max_length=16)
     status: ReviewStatus
     model_used: str = Field(min_length=1)
@@ -140,7 +153,7 @@ class EvalResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: str = Field(default="v1", pattern=r"^v\d+$")
+    schema_version: str = Field(default="v1", pattern=SCHEMA_VERSION_PATTERN)
     recall: float = Field(ge=0.0, le=1.0)
     precision: float = Field(ge=0.0, le=1.0)
     f1: float = Field(ge=0.0, le=1.0)
